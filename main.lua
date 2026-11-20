@@ -595,6 +595,63 @@ do
         end,
     })
 
+    -- ============ 暴力加速功能开始 ============
+    FlyTab:Space()
+    local SpeedValue = 100
+    local SpeedConn = nil
+
+    FlyTab:Input({
+        Title = "加速数值",
+        Desc = "建议 50~150，太高可能会被服务器拉回",
+        Placeholder = "100",
+        Value = "100",
+        Callback = function(text)
+            local n = tonumber(text)
+            if n then SpeedValue = n end
+        end,
+    })
+
+    local SpeedToggle
+    SpeedToggle = FlyTab:Toggle({
+        Title = "暴力加速 (尝试绕过)",
+        Desc = "强制锁定移动速度，需要执行器支持 hookmetamethod",
+        Value = false,
+        Callback = function(state)
+            if state then
+                if not hookmetamethod or not newcclosure then
+                    WindUI:Notify({ Title = "不支持", Content = "你的执行器缺少 hookmetamethod，无法绕过", Icon = "x", Duration = 3 })
+                    if SpeedToggle then pcall(function() SpeedToggle:Set(false) end) end
+                    return
+                end
+                
+                local oldIndex
+                local newIndex = function(self, key, value)
+                    if key == "WalkSpeed" then
+                        local char = LP.Character
+                        if char and self == char:FindFirstChildOfClass("Humanoid") then
+                            return oldIndex(self, key, SpeedValue)
+                        end
+                    end
+                    return oldIndex(self, key, value)
+                end
+                oldIndex = hookmetamethod(game, "__newindex", newcclosure(newIndex))
+
+                if SpeedConn then SpeedConn:Disconnect() end
+                SpeedConn = RunService.Heartbeat:Connect(function()
+                    local char = LP.Character
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if hum then hum.WalkSpeed = SpeedValue end
+                end)
+            else
+                if SpeedConn then SpeedConn:Disconnect(); SpeedConn = nil end
+                local char = LP.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then hum.WalkSpeed = 16 end
+            end
+        end,
+    })
+    -- ============ 暴力加速功能结束 ============
+
     FlyTab:Space()
     FlyTab:Button({
         Title = "向上传送",
