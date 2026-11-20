@@ -404,10 +404,12 @@ do
     local UIS        = game:GetService("UserInputService")
     local LP         = Players.LocalPlayer
 
-    local CONFIG = { Enabled = false, Speed = 1, FlySpeed = 50 }
+    local CONFIG = { Enabled = false, FlySpeed = 50, Speed = 1 }
     local STATE  = { Flying = false, Connection = nil, TPConnection = nil }
-    local ctrl     = { f = 0, b = 0, l = 0, r = 0 }
-    local lastctrl = { f = 0, b = 0, l = 0, r = 0 }
+
+    -- 加速功能变量
+    local SpeedValue = 100
+    local SpeedConn = nil
 
     local function startTPWalk()
         if STATE.TPConnection then STATE.TPConnection:Disconnect() end
@@ -436,120 +438,56 @@ do
             STATE.Connection:Disconnect()
             STATE.Connection = nil
         end
-        ctrl = { f = 0, b = 0, l = 0, r = 0 }
-        lastctrl = { f = 0, b = 0, l = 0, r = 0 }
         local char = LP.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then
-                hum.PlatformStand = false
-                for _, st in ipairs({
-                    Enum.HumanoidStateType.Climbing, Enum.HumanoidStateType.FallingDown,
-                    Enum.HumanoidStateType.Flying, Enum.HumanoidStateType.Freefall,
-                    Enum.HumanoidStateType.GettingUp, Enum.HumanoidStateType.Jumping,
-                    Enum.HumanoidStateType.Landed, Enum.HumanoidStateType.Physics,
-                    Enum.HumanoidStateType.PlatformStanding, Enum.HumanoidStateType.Ragdoll,
-                    Enum.HumanoidStateType.Running, Enum.HumanoidStateType.RunningNoPhysics,
-                    Enum.HumanoidStateType.Seated, Enum.HumanoidStateType.StrafingNoPhysics,
-                    Enum.HumanoidStateType.Swimming,
-                }) do
-                    pcall(function() hum:SetStateEnabled(st, true) end)
-                end
-                pcall(function() hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics) end)
+                pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
             end
             if char:FindFirstChild("Animate") then char.Animate.Disabled = false end
-            for _, v in ipairs(char:GetDescendants()) do
-                if v:IsA("BodyGyro") or v:IsA("BodyVelocity") then v:Destroy() end
-            end
         end
     end
 -- 第 8/18 段结束-- ============ 第 9/18 段 ============
+    -- CFrame 逐帧平移飞行（更难被检测）
     local function startFly()
         local char = LP.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return end
-        local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-        if not torso then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not (hum and hrp) then return end
 
         if char:FindFirstChild("Animate") then char.Animate.Disabled = true end
-        for _, v in ipairs(hum:GetPlayingAnimationTracks()) do v:AdjustSpeed(0) end
-        for _, st in ipairs({
-            Enum.HumanoidStateType.Climbing, Enum.HumanoidStateType.FallingDown,
-            Enum.HumanoidStateType.Flying, Enum.HumanoidStateType.Freefall,
-            Enum.HumanoidStateType.GettingUp, Enum.HumanoidStateType.Jumping,
-            Enum.HumanoidStateType.Landed, Enum.HumanoidStateType.Physics,
-            Enum.HumanoidStateType.PlatformStanding, Enum.HumanoidStateType.Ragdoll,
-            Enum.HumanoidStateType.Running, Enum.HumanoidStateType.RunningNoPhysics,
-            Enum.HumanoidStateType.Seated, Enum.HumanoidStateType.StrafingNoPhysics,
-            Enum.HumanoidStateType.Swimming,
-        }) do
-            pcall(function() hum:SetStateEnabled(st, false) end)
-        end
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Swimming) end)
-
-        local bg = Instance.new("BodyGyro", torso)
-        bg.P = 9e4
-        bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
-        bg.cframe = torso.CFrame
-
-        local bv = Instance.new("BodyVelocity", torso)
-        bv.velocity = Vector3.new(0, 0.1, 0)
-        bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
-
-        hum.PlatformStand = true
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end)
+        
         STATE.Flying = true
-        local speed = 0
-        local maxspeed = CONFIG.FlySpeed
+        
+        STATE.Connection = RunService.RenderStepped:Connect(function(dt)
+            if not STATE.Flying then return end
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
 
-        STATE.Connection = RunService.RenderStepped:Connect(function()
-            if not STATE.Flying or not torso.Parent or not hum.Parent then return end
-            local cam = workspace.CurrentCamera.CoordinateFrame
-            local c = ctrl
-            if c.l + c.r ~= 0 or c.f + c.b ~= 0 then
-                speed = speed + 0.5 + (speed / maxspeed)
-                if speed > maxspeed then speed = maxspeed end
-            elseif speed ~= 0 then
-                speed = speed - 1
-                if speed < 0 then speed = 0 end
+            local cam = workspace.CurrentCamera.CFrame
+            local moveVector = Vector3.zero
+
+            -- 按键检测
+            if UIS:IsKeyDown(Enum.KeyCode.W) then moveVector += cam.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then moveVector -= cam.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then moveVector -= cam.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then moveVector += cam.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0, 1, 0) end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then moveVector -= Vector3.new(0, 1, 0) end
+
+            if moveVector.Magnitude > 0 then
+                moveVector = moveVector.Unit
+                -- 核心：直接修改坐标，不使用 BodyVelocity
+                hrp.CFrame = hrp.CFrame + (moveVector * CONFIG.FlySpeed * dt)
             end
-            if c.l + c.r ~= 0 or c.f + c.b ~= 0 then
-                bv.velocity = ((cam.lookVector * (c.f + c.b)) + ((cam * CFrame.new(c.l + c.r, (c.f + c.b) * 0.2, 0).p) - cam.p)) * speed
-                lastctrl = { f = c.f, b = c.b, l = c.l, r = c.r }
-            elseif speed ~= 0 then
-                local lc = lastctrl
-                bv.velocity = ((cam.lookVector * (lc.f + lc.b)) + ((cam * CFrame.new(lc.l + lc.r, (lc.f + lc.b) * 0.2, 0).p) - cam.p)) * speed
-            else
-                bv.velocity = Vector3.new(0, 0, 0)
-            end
-            bg.cframe = cam * CFrame.Angles(-math.rad((c.f + c.b) * 50 * speed / maxspeed), 0, 0)
+            
+            -- 抵消重力
+            hrp.AssemblyLinearVelocity = Vector3.zero
         end)
-
-        STATE.FlyCleanup = function()
-            bg:Destroy()
-            bv:Destroy()
-            hum.PlatformStand = false
-            if char:FindFirstChild("Animate") then char.Animate.Disabled = false end
-        end
     end
-
-    UIS.InputBegan:Connect(function(input, gpe)
-        if gpe or not STATE.Flying then return end
-        if input.KeyCode == Enum.KeyCode.W then ctrl.f = 1
-        elseif input.KeyCode == Enum.KeyCode.S then ctrl.b = -1
-        elseif input.KeyCode == Enum.KeyCode.A then ctrl.l = -1
-        elseif input.KeyCode == Enum.KeyCode.D then ctrl.r = 1
-        end
-    end)
-
-    UIS.InputEnded:Connect(function(input, gpe)
-        if gpe then return end
-        if input.KeyCode == Enum.KeyCode.W then ctrl.f = 0
-        elseif input.KeyCode == Enum.KeyCode.S then ctrl.b = 0
-        elseif input.KeyCode == Enum.KeyCode.A then ctrl.l = 0
-        elseif input.KeyCode == Enum.KeyCode.D then ctrl.r = 0
-        end
-    end)
 
     LP.CharacterAdded:Connect(function()
         stopFly()
@@ -558,8 +496,8 @@ do
 -- 第 9/18 段结束-- ============ 第 10/18 段 ============
     local FlyToggle
     FlyToggle = FlyTab:Toggle({
-        Title = "启用飞行",
-        Desc = "开启后使用 WASD 控制飞行方向",
+        Title = "启用飞行 (CFrame绕过)",
+        Desc = "纯坐标平移，不生成物理组件，更难被检测",
         Value = false,
         Callback = function(state)
             CONFIG.Enabled = state
@@ -574,10 +512,10 @@ do
     })
 
     FlyTab:Input({
-        Title = "飞行速度上限",
-        Desc = "飞行时的最大移动速度",
+        Title = "飞行速度",
+        Desc = "建议 30~100，太快可能被服务器拉回",
         Placeholder = "50",
-        Value = tostring(CONFIG.FlySpeed),
+        Value = "50",
         Callback = function(text)
             local n = tonumber(text)
             if n then CONFIG.FlySpeed = math.clamp(n, 10, 500) end
@@ -585,24 +523,21 @@ do
     })
 
     FlyTab:Input({
-        Title = "行走加速倍率",
-        Desc = "贴地行走时每帧位移倍率",
+        Title = "地面加速倍率",
         Placeholder = "1",
-        Value = tostring(CONFIG.Speed),
+        Value = "1",
         Callback = function(text)
             local n = tonumber(text)
             if n then CONFIG.Speed = math.clamp(math.floor(n), 1, 20) end
         end,
     })
 
-    -- ============ 暴力加速功能开始 ============
     FlyTab:Space()
-    local SpeedValue = 100
-    local SpeedConn = nil
 
+    -- ============ 暴力加速功能 ============
     FlyTab:Input({
-        Title = "加速数值",
-        Desc = "建议 50~150，太高可能会被服务器拉回",
+        Title = "行走加速数值",
+        Desc = "建议 50~150，配合执行器 hookmetamethod",
         Placeholder = "100",
         Value = "100",
         Callback = function(text)
@@ -614,12 +549,11 @@ do
     local SpeedToggle
     SpeedToggle = FlyTab:Toggle({
         Title = "暴力加速 (尝试绕过)",
-        Desc = "强制锁定移动速度，需要执行器支持 hookmetamethod",
         Value = false,
         Callback = function(state)
             if state then
                 if not hookmetamethod or not newcclosure then
-                    WindUI:Notify({ Title = "不支持", Content = "你的执行器缺少 hookmetamethod，无法绕过", Icon = "x", Duration = 3 })
+                    WindUI:Notify({ Title = "不支持", Content = "执行器缺少 hookmetamethod", Icon = "x", Duration = 3 })
                     if SpeedToggle then pcall(function() SpeedToggle:Set(false) end) end
                     return
                 end
@@ -677,15 +611,19 @@ do
 
     FlyTab:Space()
     FlyTab:Button({
-        Title = "紧急停止飞行",
-        Desc = "立即关闭飞行并恢复人形状态",
+        Title = "紧急停止",
+        Desc = "关闭所有功能并恢复状态",
         Icon = "square",
         Callback = function()
             CONFIG.Enabled = false
             if FlyToggle then pcall(function() FlyToggle:Set(false) end) end
+            if SpeedToggle then pcall(function() SpeedToggle:Set(false) end) end
             stopFly()
             stopTPWalk()
-            WindUI:Notify({ Title = "飞行已停止", Content = "已恢复常规状态", Icon = "check", Duration = 2 })
+            if SpeedConn then SpeedConn:Disconnect(); SpeedConn = nil end
+            local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = 16 end
+            WindUI:Notify({ Title = "已停止", Content = "已恢复常规状态", Icon = "check", Duration = 2 })
         end,
     })
 end
