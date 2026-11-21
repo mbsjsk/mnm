@@ -1812,6 +1812,225 @@ end
 -- ============ 无延迟甩飞结束 ============
 -- 第 3/3 段结束
 -- 第 17/18 段结束-- ============ 第 18/18 段 ============
+-- ============ 玩家 ESP 标签页 ============
+local ESPTab = Window:Tab({
+    Title = "玩家 ESP",
+    Icon = "eye",
+    Locked = false,
+})
+
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local LP = Players.LocalPlayer
+    local PlayerGui = LP:WaitForChild("PlayerGui")
+
+    local ESP = {
+        Enabled = false,
+        ShowOutline = true,
+        ShowName = true,
+        ShowDistance = true,
+        ShowHealth = false,
+        Color = Color3.fromRGB(255, 85, 85),
+        Entries = {},
+        Connections = {},
+    }
+
+    local function removePlayerESP(player)
+        local entry = ESP.Entries[player]
+        if not entry then return end
+        if entry.Highlight then entry.Highlight:Destroy() end
+        if entry.Billboard then entry.Billboard:Destroy() end
+        ESP.Entries[player] = nil
+    end
+
+    local function updateLabel(player, entry)
+        local character = player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local myCharacter = LP.Character
+        local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+        if not (root and myRoot and entry.Label) then return end
+
+        local parts = {}
+        if ESP.ShowName then
+            parts[#parts + 1] = player.DisplayName .. "  (" .. player.Name .. ")"
+        end
+        if ESP.ShowDistance then
+            parts[#parts + 1] = tostring(math.floor((root.Position - myRoot.Position).Magnitude + 0.5)) .. " studs"
+        end
+        if ESP.ShowHealth and humanoid then
+            parts[#parts + 1] = "HP: " .. tostring(math.floor(humanoid.Health)) .. "/" .. tostring(math.floor(humanoid.MaxHealth))
+        end
+        entry.Label.Text = table.concat(parts, "\n")
+        entry.Billboard.Enabled = ESP.Enabled and #parts > 0
+        entry.Billboard.Adornee = root
+    end
+
+    local function createPlayerESP(player)
+        if player == LP or not ESP.Enabled then return end
+        removePlayerESP(player)
+
+        local character = player.Character
+        if not character then return end
+
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "NUL_PlayerESP_Highlight"
+        highlight.Adornee = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillTransparency = 1
+        highlight.OutlineTransparency = 0
+        highlight.OutlineColor = ESP.Color
+        highlight.Enabled = ESP.ShowOutline
+        highlight.Parent = character
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "NUL_PlayerESP_Info"
+        billboard.Size = UDim2.fromOffset(220, 64)
+        billboard.StudsOffset = Vector3.new(0, 3.2, 0)
+        billboard.AlwaysOnTop = true
+        billboard.LightInfluence = 0
+        billboard.MaxDistance = 10000
+        billboard.Enabled = false
+        billboard.Parent = PlayerGui
+
+        local label = Instance.new("TextLabel")
+        label.Name = "Info"
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.fromScale(1, 1)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 13
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+        label.TextStrokeTransparency = 0.15
+        label.TextWrapped = true
+        label.TextYAlignment = Enum.TextYAlignment.Center
+        label.Parent = billboard
+
+        local entry = { Highlight = highlight, Billboard = billboard, Label = label }
+        ESP.Entries[player] = entry
+        updateLabel(player, entry)
+    end
+
+    local function refreshAll()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LP then
+                if ESP.Enabled then
+                    createPlayerESP(player)
+                else
+                    removePlayerESP(player)
+                end
+            end
+        end
+    end
+
+    local function setESPEnabled(state)
+        ESP.Enabled = state
+        refreshAll()
+    end
+
+    ESPTab:Paragraph({
+        Title = "玩家透视说明",
+        Desc = "本地显示其他玩家轮廓、名字和距离；只改变你自己的画面。",
+    })
+
+    ESPTab:Toggle({
+        Title = "启用玩家 ESP",
+        Desc = "总开关",
+        Value = false,
+        Callback = setESPEnabled,
+    })
+
+    ESPTab:Toggle({
+        Title = "轮廓高亮（隔墙可见）",
+        Value = true,
+        Callback = function(state)
+            ESP.ShowOutline = state
+            for _, entry in pairs(ESP.Entries) do
+                if entry.Highlight then entry.Highlight.Enabled = state and ESP.Enabled end
+            end
+        end,
+    })
+
+    ESPTab:Toggle({
+        Title = "显示玩家名字",
+        Value = true,
+        Callback = function(state)
+            ESP.ShowName = state
+            for player, entry in pairs(ESP.Entries) do updateLabel(player, entry) end
+        end,
+    })
+
+    ESPTab:Toggle({
+        Title = "显示距离",
+        Value = true,
+        Callback = function(state)
+            ESP.ShowDistance = state
+            for player, entry in pairs(ESP.Entries) do updateLabel(player, entry) end
+        end,
+    })
+
+    ESPTab:Toggle({
+        Title = "显示血量",
+        Value = false,
+        Callback = function(state)
+            ESP.ShowHealth = state
+            for player, entry in pairs(ESP.Entries) do updateLabel(player, entry) end
+        end,
+    })
+
+    ESPTab:Button({
+        Title = "刷新 ESP",
+        Icon = "refresh-cw",
+        Callback = refreshAll,
+    })
+
+    table.insert(ESP.Connections, Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(function()
+            if ESP.Enabled then
+                task.wait(0.5)
+                createPlayerESP(player)
+            end
+        end)
+    end))
+
+    table.insert(ESP.Connections, Players.PlayerRemoving:Connect(removePlayerESP))
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LP then
+            player.CharacterAdded:Connect(function()
+                if ESP.Enabled then
+                    task.wait(0.5)
+                    createPlayerESP(player)
+                end
+            end)
+        end
+    end
+
+    table.insert(ESP.Connections, RunService.Heartbeat:Connect(function()
+        if not ESP.Enabled then return end
+        for player, entry in pairs(ESP.Entries) do
+            if not player.Parent or not player.Character then
+                removePlayerESP(player)
+            else
+                updateLabel(player, entry)
+                if entry.Highlight then
+                    entry.Highlight.Enabled = ESP.ShowOutline
+                    entry.Highlight.Adornee = player.Character
+                end
+            end
+        end
+    end))
+
+    LP.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if ESP.Enabled then
+            for player, entry in pairs(ESP.Entries) do updateLabel(player, entry) end
+        end
+    end)
+end
+-- ============ 玩家 ESP 标签页结束 ============
+
 local SettingsTab = Window:Tab({
     Title = "设置",
     Icon = "settings",
