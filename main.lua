@@ -170,6 +170,76 @@ local Window = WindUI:CreateWindow({
     Theme = "Dark",
     HideSearchBar = false,
 })
+
+-- ============ 点击音效（移植自第一个文件）============
+local NUL_ClickSoundAsset = nil
+local NUL_ClickSoundPath = "恐脚本/DING.WAV"
+
+task.spawn(function()
+    local ok, data = pcall(function()
+        return game:HttpGet("https://raw.githubusercontent.com/kongbaNB/TB/refs/heads/main/DING.WAV")
+    end)
+
+    if ok and data and data ~= "" then
+        pcall(function()
+            if makefolder and not isfolder("恐脚本") then
+                makefolder("恐脚本")
+            end
+            writefile(NUL_ClickSoundPath, data)
+        end)
+
+        pcall(function()
+            NUL_ClickSoundAsset = getcustomasset(NUL_ClickSoundPath)
+        end)
+    end
+end)
+
+local function NUL_PlayClickSound()
+    if not NUL_ClickSoundAsset then
+        pcall(function()
+            NUL_ClickSoundAsset = getcustomasset(NUL_ClickSoundPath)
+        end)
+    end
+    if not NUL_ClickSoundAsset then return end
+
+    pcall(function()
+        local sound = Instance.new("Sound")
+        sound.SoundId = NUL_ClickSoundAsset
+        sound.Volume = 2
+        sound.Parent = game:GetService("SoundService")
+        game:GetService("SoundService"):PlayLocalSound(sound)
+        sound.Ended:Connect(function()
+            sound:Destroy()
+        end)
+    end)
+end
+
+-- 监听 WindUI 创建的按钮；同时覆盖 CoreGui 和 PlayerGui 中已有/新建按钮
+local NUL_HookedClickButtons = setmetatable({}, { __mode = "k" })
+
+local function NUL_HookClickButton(obj)
+    if not obj or not obj:IsA("GuiButton") or NUL_HookedClickButtons[obj] then
+        return
+    end
+    NUL_HookedClickButtons[obj] = true
+    obj.Activated:Connect(NUL_PlayClickSound)
+end
+
+local function NUL_HookClickGui(root)
+    if not root then return end
+    for _, obj in ipairs(root:GetDescendants()) do
+        NUL_HookClickButton(obj)
+    end
+    root.DescendantAdded:Connect(NUL_HookClickButton)
+end
+
+pcall(function()
+    NUL_HookClickGui(game:GetService("CoreGui"))
+end)
+pcall(function()
+    NUL_HookClickGui(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"))
+end)
+-- ============ 点击音效移植结束 ============
 -- 第 3/18 段结束-- ============ 第 4/18 段 ============
 do
     local Players    = game:GetService("Players")
